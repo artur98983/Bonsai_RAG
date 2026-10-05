@@ -16,11 +16,8 @@ from .database import (
 
 from .indexer import index_project
 
-from .rag import (
-    search,
-    expand_graph,
-    ask_bonsai,
-)
+from .retrieval.hybrid import hybrid_search
+from .retrieval.graph import get_graph_context
 
 @asynccontextmanager
 async def lifespan(app):
@@ -304,7 +301,7 @@ async def chat(data: ChatRequest):
     # 1. Semantic search
     # -----------------------------------------------------
 
-    search_results = search(
+    search_results = hybrid_search(
         data.project,
         data.message,
         data.context_limit,

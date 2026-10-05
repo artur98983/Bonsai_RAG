@@ -535,43 +535,54 @@ def index_project(project_id, project_path):
         structural_references,
     )
 
-    # ---------------------------------------------------------
-    # Save Qdrant vectors
-    # ---------------------------------------------------------
+# ---------------------------------------------------------
+# Save Qdrant vectors
+# ---------------------------------------------------------
 
-    if all_documents:
+all_documents = []
 
-        texts = [
-            document["text"]
-            for document in all_documents
-        ]
+for index, symbol in enumerate(structural_symbols):
+    symbol_id = db_ids[index]
 
-        vectors = embedding_model.encode(texts)
+    all_documents.append(
+        {
+            "symbol_id": symbol_id,
+            "file": symbol["file"],
+            "symbol": symbol["qualified_name"],
+            "symbol_type": symbol["type"],
+            "language": symbol["language"],
+            "start_line": symbol["start_line"],
+            "end_line": symbol["end_line"],
+            "text": symbol["code"],
+        }
+    )
 
-        points = []
+if all_documents:
+    texts = [
+        document["text"]
+        for document in all_documents
+    ]
 
-        for index, (document, vector) in enumerate(
-            zip(all_documents, vectors)
-        ):
-            points.append(
-                PointStruct(
-                    id=index + 1,
-                    vector=vector.tolist(),
-                    payload={
-                        "project_id": project_id,
-                        **document,
-                    },
-                )
+    vectors = embedding_model.encode(texts)
+
+    points = []
+
+    for document, vector in zip(
+        all_documents,
+        vectors,
+    ):
+        points.append(
+            PointStruct(
+                id=document["symbol_id"],
+                vector=vector.tolist(),
+                payload={
+                    "project_id": project_id,
+                    **document,
+                },
             )
-
-        qdrant.upsert(
-            collection_name=COLLECTION_NAME,
-            points=points,
         )
 
-    return {
-        "files": files_count,
-        "documents": len(all_documents),
-        "symbols": len(structural_symbols),
-        "references": len(structural_references),
-    }
+    qdrant.upsert(
+        collection_name=COLLECTION_NAME,
+        points=points,
+    )
