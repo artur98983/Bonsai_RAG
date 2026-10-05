@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+qdrant-client
+sentence-transformers
+pypdf
+python-multipart
+httpx
+numpy
+tree-sitter-language-pack
