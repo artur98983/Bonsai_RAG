@@ -557,32 +557,32 @@ for index, symbol in enumerate(structural_symbols):
         }
     )
 
-if all_documents:
-    texts = [
-        document["text"]
-        for document in all_documents
-    ]
+    if all_documents:
+        texts = [
+            document["text"]
+            for document in all_documents
+        ]
 
-    vectors = embedding_model.encode(texts)
+        vectors = embedding_model.encode(texts)
 
-    points = []
+        points = []
 
-    for document, vector in zip(
-        all_documents,
-        vectors,
-    ):
-        points.append(
-            PointStruct(
-                id=document["symbol_id"],
-                vector=vector.tolist(),
-                payload={
-                    "project_id": project_id,
-                    **document,
-                },
+        for document, vector in zip(
+            all_documents,
+            vectors,
+        ):
+            points.append(
+                PointStruct(
+                    id=document["symbol_id"],
+                    vector=vector.tolist(),
+                    payload={
+                        "project_id": project_id,
+                        **document,
+                    },
+                )
             )
-        )
 
-    qdrant.upsert(
-        collection_name=COLLECTION_NAME,
-        points=points,
-    )
+        qdrant.upsert(
+            collection_name=COLLECTION_NAME,
+            points=points,
+        )
