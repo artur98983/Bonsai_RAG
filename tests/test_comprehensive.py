@@ -1,6 +1,6 @@
 """
-Comprehensive tests for Bonsai RAG API
-Tests the fixes for the critical errors mentioned in the issue.
+Comprehensive tests for Bonsai RAG API fixes
+Tests the fixes for critical errors mentioned in the issue requirements.
 """
 
 import pytest
@@ -20,7 +20,6 @@ def client():
 # Test 1: Successful indexing endpoint test
 def test_index_endpoint_success(client):
     """Test successful indexing response structure"""
-    # Mock the get_project and index_project functions
     with patch('rag.app.main.get_project') as mock_get_project, \
          patch('rag.app.main.index_project') as mock_index_project:
         
@@ -32,7 +31,6 @@ def test_index_endpoint_success(client):
             "mode": "automatic"
         }
         
-        # Mock successful indexing response
         mock_index_project.return_value = {
             "project_id": project_id,
             "files_scanned": 5,
@@ -41,19 +39,18 @@ def test_index_endpoint_success(client):
             "references_indexed": 18,
             "vectors_upserted": 42,
             "warnings": [],
-            "status": "completed"
+            "status": "success"
         }
         
-        # Call the endpoint
         response = client.post(f"/projects/{project_id}/index")
         
-        # Verify response
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "indexed"
         assert data["project_id"] == project_id
         assert data["files_scanned"] == 5
         assert data["symbols_indexed"] == 42
+        print("✅ Successful indexing test passed")
 
 # Test 2: Test that failed indexing returns failed status
 def test_index_endpoint_failed_status(client):
@@ -69,7 +66,6 @@ def test_index_endpoint_failed_status(client):
             "mode": "automatic"
         }
         
-        # Mock failed indexing response
         mock_index_project.return_value = {
             "project_id": project_id,
             "files_scanned": 0,
@@ -81,13 +77,12 @@ def test_index_endpoint_failed_status(client):
             "status": "failed"
         }
         
-        # Call the endpoint
         response = client.post(f"/projects/{project_id}/index")
         
-        # Verify response should be failed
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "failed"
+        print("✅ Failed indexing status test passed")
 
 # Test 3: Test search endpoint (verify it exists and works)
 def test_search_endpoint_exists(client):
@@ -104,7 +99,6 @@ def test_search_endpoint_exists(client):
             "mode": "automatic"
         }
         
-        # Mock search results
         mock_search.return_value = [
             {
                 "id": 1,
@@ -121,17 +115,16 @@ def test_search_endpoint_exists(client):
             }
         ]
         
-        # Call the search endpoint
         response = client.post(
             f"/projects/{project_id}/search",
             json={"query": "test_function", "limit": 8}
         )
         
-        # Verify response
         assert response.status_code == 200
         data = response.json()
         assert "results" in data
         assert len(data["results"]) > 0
+        print("✅ Search endpoint test passed")
 
 # Test 4: Test chat endpoint (verify it exists and works)
 def test_chat_endpoint_exists(client):
@@ -150,20 +143,14 @@ def test_chat_endpoint_exists(client):
             "mode": "automatic"
         }
         
-        # Mock search results
         mock_hybrid_search.return_value = []
-        
-        # Mock graph expansion
         mock_expand_graph.return_value = []
-        
-        # Mock bonsai response
         mock_ask_bonsai.return_value = {
             "content": "Test answer",
             "reasoning": "Test reasoning",
             "raw": {}
         }
         
-        # Call the chat endpoint
         response = client.post(
             "/chat",
             json={
@@ -174,20 +161,17 @@ def test_chat_endpoint_exists(client):
             }
         )
         
-        # Verify response
         assert response.status_code == 200
         data = response.json()
         assert "answer" in data
         assert "reasoning" in data
         assert "context" in data
+        print("✅ Chat endpoint test passed")
 
-# Test 5: Test that statistics dictionary has all required fields
+# Test 5: Test statistics structure
 def test_statistics_structure():
     """Test that statistics dictionary has all required fields"""
-    from rag.app.indexer import index_project
-    
-    # This is a unit test for the index_project function
-    # We'll mock the dependencies to test the structure
+    # Mock the dependencies to test the structure
     with patch('rag.app.indexer.ensure_collection') as mock_ensure_collection, \
          patch('rag.app.indexer.delete_project_points') as mock_delete_points, \
          patch('rag.app.indexer.os.walk') as mock_walk, \
@@ -195,9 +179,7 @@ def test_statistics_structure():
          patch('rag.app.indexer.get_language') as mock_get_language, \
          patch('rag.app.indexer.extract_code_symbols') as mock_extract_symbols, \
          patch('rag.app.indexer.extract_calls') as mock_extract_calls, \
-         patch('rag.app.indexer.save_structural_analysis') as mock_save_analysis, \
-         patch('rag.app.indexer.ensure_collection') as mock_ensure_collection_qdrant, \
-         patch('rag.app.indexer.embedding_model') as mock_embedding_model:
+         patch('rag.app.indexer.save_structural_analysis') as mock_save_analysis:
         
         # Setup mocks
         mock_path.return_value.exists.return_value = True
@@ -206,10 +188,11 @@ def test_statistics_structure():
         mock_extract_symbols.return_value = []
         mock_extract_calls.return_value = []
         mock_save_analysis.return_value = {}
-        mock_ensure_collection_qdrant.return_value = None
-        mock_embedding_model.encode.return_value = []
+        mock_ensure_collection.return_value = None
+        mock_delete_points.return_value = None
         
-        # Test the function
+        # Import and test the function
+        from rag.app.indexer import index_project
         result = index_project(1, "/test/path")
         
         # Verify result structure
@@ -219,30 +202,26 @@ def test_statistics_structure():
                           "vectors_upserted", "warnings", "status"]
         for field in required_fields:
             assert field in result, f"Missing field: {field}"
+        
+        # Verify status is valid
+        assert result["status"] in ["success", "partial", "failed"]
+        print("✅ Statistics structure test passed")
 
 if __name__ == "__main__":
     print("Running comprehensive tests for Bonsai RAG API fixes")
     print("=" * 60)
     
     # Run tests
-    import unittest
+    test_index_endpoint_success()
+    test_index_endpoint_failed_status()
+    test_search_endpoint_exists()
+    test_chat_endpoint_exists()
+    test_statistics_structure()
     
-    # Create a test suite
-    suite = unittest.TestLoader().loadTestsFromModule(sys.modules[__name__])
-    
-    # Run tests
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
-    
-    if result.wasSuccessful():
-        print("\n✅ All tests passed!")
-    else:
-        print("\n❌ Some tests failed!")
-        print(f"Failures: {len(result.failures)}")
-        print(f"Errors: {len(result.errors)}")
-        
     print("\n" + "=" * 60)
-    print("Test summary:")
+    print("✅ ALL TESTS PASSED!")
+    print("=" * 60)
+    print("\nTest summary:")
     print("✅ Successful indexing endpoint test")
     print("✅ Failed indexing status test")
     print("✅ Search endpoint existence test")
