@@ -400,6 +400,17 @@ def index_project(project_id, project_path):
         # Логируем ошибку удаления и продолжаем
         pass
 
+    # Initialize statistics for the result
+    statistics = {
+        "project_id": project_id,
+        "files_scanned": 0,
+        "files_indexed": 0,
+        "symbols_indexed": 0,
+        "references_indexed": 0,
+        "vectors_upserted": 0,
+        "warnings": [],
+    }
+
     all_documents = []
     structural_symbols = []
     structural_references = []
@@ -519,6 +530,7 @@ def index_project(project_id, project_path):
 
                 all_documents.append(
                     {
+                        "symbol_id": global_index,
                         "file": relative_file,
                         "symbol": symbol["qualified_name"],
                         "symbol_type": symbol["type"],
@@ -539,26 +551,36 @@ def index_project(project_id, project_path):
         structural_references,
     )
 
+    # Update statistics
+    statistics["files_scanned"] = files_count
+    statistics["files_indexed"] = len(set(
+        symbol["file"] for symbol in structural_symbols
+    ))
+    statistics["symbols_indexed"] = len(structural_symbols)
+    statistics["references_indexed"] = len(structural_references)
+
     # ---------------------------------------------------------
     # Save Qdrant vectors
     # ---------------------------------------------------------
-
-    warnings = []
 
     # Инициализация Qdrant коллекции с обработкой ошибок
     try:
         ensure_collection()
     except Exception as e:
-        warnings.append(f"Qdrant collection ensure failed: {e}")
+        statistics["warnings"].append(f"Qdrant collection ensure failed: {e}")
 
     # Удаление точек с обработкой ошибок
     try:
         delete_project_points(project_id)
     except Exception as e:
-        warnings.append(f"Qdrant cleanup failed: {e}")
+        statistics["warnings"].append(f"Qdrant cleanup failed: {e}")
 
     # Сохранение векторов с обработкой ошибок
     if all_documents:
+        # Обновляем all_documents с правильными symbol_id из db_ids
+        for i, document in enumerate(all_documents):
+            document["symbol_id"] = db_ids[i]
+
         texts = [
             document["text"]
             for document in all_documents
@@ -567,7 +589,7 @@ def index_project(project_id, project_path):
         try:
             vectors = embedding_model.encode(texts)
         except Exception as e:
-            warnings.append(f"Embedding encoding failed: {e}")
+            statistics["warnings"].append(f"Embedding encoding failed: {e}")
             vectors = []
 
         points = []
@@ -595,24 +617,10 @@ def index_project(project_id, project_path):
                     collection_name=COLLECTION_NAME,
                     points=points,
                 )
+                statistics["vectors_upserted"] = len(points)
             except Exception as e:
-                warnings.append(f"Qdrant upsert failed: {e}")
-
-    # Формирование статистики для возврата
-    statistics = {
-        "project_id": project_id,
-        "files_scanned": files_count,
-        "files_indexed": len(set(
-            symbol["file"] for symbol in structural_symbols
-        )),
-        "symbols_indexed": len(structural_symbols),
-        "references_indexed": len(structural_references),
-        "vectors_upserted": len(points) if 'points' in locals() else 0,
-        "warnings": warnings,
-    }
+                statistics["warnings"].append(f"Qdrant upsert failed: {e}")
 
     return statistics
-
-    return db_ids
 
 # ---------------------------------------------------------
