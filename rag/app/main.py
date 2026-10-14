@@ -119,6 +119,15 @@ def index(project_id: int):
         project["path"],
     )
 
+    # The index_project function now includes a "status" field
+    # If status is "failed", we should not report success
+    if statistics.get("status") == "failed":
+        return {
+            "status": "failed",
+            "project_id": project_id,
+            **statistics,
+        }
+
     return {
         "status": "indexed",
         "project_id": project_id,

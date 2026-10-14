@@ -296,9 +296,16 @@ def save_structural_analysis(
     """
     Save symbols first so that parent_symbol_id and target_symbol_id
     can reference actual database IDs.
+    
+    This function is called from index_project with error handling.
     """
 
-    clear_project_code(project_id)
+    # Clear project code data - this must be the first step
+    # to prepare for the new index
+    try:
+        clear_project_code(project_id)
+    except Exception as e:
+        raise RuntimeError(f"Failed to clear existing project data: {e}")
 
     db_ids = {}
 
@@ -392,14 +399,6 @@ def save_structural_analysis(
 
 
 def index_project(project_id, project_path):
-    ensure_collection()
-
-    try:
-        delete_project_points(project_id)
-    except Exception as e:
-        # Логируем ошибку удаления и продолжаем
-        pass
-
     # Initialize statistics for the result
     statistics = {
         "project_id": project_id,
@@ -410,19 +409,43 @@ def index_project(project_id, project_path):
         "vectors_upserted": 0,
         "warnings": [],
     }
+    
+    # Set status to "in_progress" initially
+    statistics["status"] = "in_progress"
+
+    # Validate project path before any operations
+    project_root = Path(project_path)
+    if not project_root.exists():
+        raise FileNotFoundError(
+            f"Project path does not exist: {project_path}"
+        )
+
+    # Create a working copy of the path for reference
+    working_path = str(project_root.resolve())
+    
+    ensure_collection()
+
+    # Delete project points safely with proper error handling
+    delete_success = False
+    try:
+        delete_project_points(project_id)
+        delete_success = True
+    except Exception as e:
+        statistics["warnings"].append(f"Qdrant cleanup failed: {e}")
+        # Don't continue with new index if cleanup failed
+        statistics["status"] = "failed"
+        return statistics
+    
+    # If delete failed, don't proceed with new index
+    if not delete_success:
+        statistics["status"] = "failed"
+        return statistics
 
     all_documents = []
     structural_symbols = []
     structural_references = []
 
     files_count = 0
-
-    project_root = Path(project_path)
-
-    if not project_root.exists():
-        raise FileNotFoundError(
-            f"Project path does not exist: {project_path}"
-        )
 
     # ---------------------------------------------------------
     # Walk project
@@ -562,64 +585,64 @@ def index_project(project_id, project_path):
     # ---------------------------------------------------------
     # Save Qdrant vectors
     # ---------------------------------------------------------
-
-    # Инициализация Qdrant коллекции с обработкой ошибок
-    try:
-        ensure_collection()
-    except Exception as e:
-        statistics["warnings"].append(f"Qdrant collection ensure failed: {e}")
-
-    # Удаление точек с обработкой ошибок
-    try:
-        delete_project_points(project_id)
-    except Exception as e:
-        statistics["warnings"].append(f"Qdrant cleanup failed: {e}")
-
-    # Сохранение векторов с обработкой ошибок
-    if all_documents:
-        # Обновляем all_documents с правильными symbol_id из db_ids
-        for i, document in enumerate(all_documents):
-            document["symbol_id"] = db_ids[i]
-
-        texts = [
-            document["text"]
-            for document in all_documents
-        ]
-
+    
+    # Only proceed with Qdrant operations if cleanup succeeded
+    if statistics["status"] == "in_progress":
+        # Initialize Qdrant collection with proper error handling
         try:
-            vectors = embedding_model.encode(texts)
+            ensure_collection()
         except Exception as e:
-            statistics["warnings"].append(f"Embedding encoding failed: {e}")
-            vectors = []
+            statistics["warnings"].append(f"Qdrant collection ensure failed: {e}")
+            statistics["status"] = "failed"
+            return statistics
 
-        points = []
+        # Attempt to save vectors to Qdrant
+        if all_documents:
+            # Update documents with correct symbol IDs from SQLite
+            for i, document in enumerate(all_documents):
+                document["symbol_id"] = db_ids[i]
 
-        if vectors:
-            for document, vector in zip(
-                all_documents,
-                vectors,
-            ):
-                points.append(
-                    PointStruct(
-                        id=document["symbol_id"],
-                        vector=vector.tolist(),
-                        payload={
-                            "project_id": project_id,
-                            **document,
-                        }
-                    )
-                )
+            texts = [
+                document["text"]
+                for document in all_documents
+            ]
 
-        # Сохранение Qdrant с обработкой ошибок
-        if points:
             try:
-                qdrant.upsert(
-                    collection_name=COLLECTION_NAME,
-                    points=points,
-                )
-                statistics["vectors_upserted"] = len(points)
+                vectors = embedding_model.encode(texts)
             except Exception as e:
-                statistics["warnings"].append(f"Qdrant upsert failed: {e}")
+                statistics["warnings"].append(f"Embedding encoding failed: {e}")
+                vectors = []
+
+            points = []
+
+            if vectors:
+                for document, vector in zip(
+                    all_documents,
+                    vectors,
+                ):
+                    points.append(
+                        PointStruct(
+                            id=document["symbol_id"],
+                            vector=vector.tolist(),
+                            payload={
+                                "project_id": project_id,
+                                **document,
+                            }
+                        )
+                    )
+
+            # Save points to Qdrant with validation
+            if points:
+                try:
+                    qdrant.upsert(
+                        collection_name=COLLECTION_NAME,
+                        points=points,
+                    )
+                    statistics["vectors_upserted"] = len(points)
+                except Exception as e:
+                    statistics["warnings"].append(f"Qdrant upsert failed: {e}")
+                    statistics["status"] = "failed"
+                    return statistics
 
     return statistics
 
