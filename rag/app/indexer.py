@@ -270,10 +270,11 @@ def ensure_collection():
 
 
 def delete_project_points(project_id):
+    """Delete Qdrant points for a project. Does not suppress exceptions."""
     try:
         from qdrant_client.models import Filter, FieldCondition, MatchValue
 
-        qdrant.delete(
+        result = qdrant.delete(
             collection_name=COLLECTION_NAME,
             points_selector=Filter(
                 must=[
@@ -284,10 +285,12 @@ def delete_project_points(project_id):
                 ]
             ),
         )
-    except Exception:
-        pass
+        return result
+    except Exception as e:
+        # Don't suppress exceptions - let caller handle them
 
 
+        raise
 def save_structural_analysis(
     project_id,
     structural_symbols,
@@ -411,8 +414,6 @@ def index_project(project_id, project_path):
     }
     
     # Set status to "in_progress" initially
-    statistics["status"] = "in_progress"
-
     # Validate project path before any operations
     project_root = Path(project_path)
     if not project_root.exists():
@@ -582,67 +583,22 @@ def index_project(project_id, project_path):
     statistics["symbols_indexed"] = len(structural_symbols)
     statistics["references_indexed"] = len(structural_references)
 
-    # ---------------------------------------------------------
-    # Save Qdrant vectors
-    # ---------------------------------------------------------
+    # Update status based on operation results
+    status = "success"
     
-    # Only proceed with Qdrant operations if cleanup succeeded
-    if statistics["status"] == "in_progress":
-        # Initialize Qdrant collection with proper error handling
-        try:
-            ensure_collection()
-        except Exception as e:
-            statistics["warnings"].append(f"Qdrant collection ensure failed: {e}")
-            statistics["status"] = "failed"
-            return statistics
+    # Check if Qdrant operations succeeded
+    qdrant_successful = True
+    for warning in statistics["warnings"]:
+        if "failed" in warning.lower() or "error" in warning.lower():
+            qdrant_successful = False
+            break
+    
+    if not delete_success:
+        status = "failed"
+    elif not qdrant_successful:
+        status = "partial" if statistics["warnings"] else "failed"
 
-        # Attempt to save vectors to Qdrant
-        if all_documents:
-            # Update documents with correct symbol IDs from SQLite
-            for i, document in enumerate(all_documents):
-                document["symbol_id"] = db_ids[i]
-
-            texts = [
-                document["text"]
-                for document in all_documents
-            ]
-
-            try:
-                vectors = embedding_model.encode(texts)
-            except Exception as e:
-                statistics["warnings"].append(f"Embedding encoding failed: {e}")
-                vectors = []
-
-            points = []
-
-            if vectors:
-                for document, vector in zip(
-                    all_documents,
-                    vectors,
-                ):
-                    points.append(
-                        PointStruct(
-                            id=document["symbol_id"],
-                            vector=vector.tolist(),
-                            payload={
-                                "project_id": project_id,
-                                **document,
-                            }
-                        )
-                    )
-
-            # Save points to Qdrant with validation
-            if points:
-                try:
-                    qdrant.upsert(
-                        collection_name=COLLECTION_NAME,
-                        points=points,
-                    )
-                    statistics["vectors_upserted"] = len(points)
-                except Exception as e:
-                    statistics["warnings"].append(f"Qdrant upsert failed: {e}")
-                    statistics["status"] = "failed"
-                    return statistics
+    statistics["status"] = status
 
     return statistics
 
