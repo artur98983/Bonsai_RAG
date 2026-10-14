@@ -525,7 +525,7 @@ def index_project(project_id, project_path):
                     }
                 )
 
-    # ---------------------------------------------------------
+# ---------------------------------------------------------
     # Save SQLite structure
     # ---------------------------------------------------------
 
@@ -535,27 +535,27 @@ def index_project(project_id, project_path):
         structural_references,
     )
 
-# ---------------------------------------------------------
-# Save Qdrant vectors
-# ---------------------------------------------------------
+    # ---------------------------------------------------------
+    # Save Qdrant vectors
+    # ---------------------------------------------------------
 
-all_documents = []
+    all_documents = []
 
-for index, symbol in enumerate(structural_symbols):
-    symbol_id = db_ids[index]
+    for index, symbol in enumerate(structural_symbols):
+        symbol_id = db_ids[index]
 
-    all_documents.append(
-        {
-            "symbol_id": symbol_id,
-            "file": symbol["file"],
-            "symbol": symbol["qualified_name"],
-            "symbol_type": symbol["type"],
-            "language": symbol["language"],
-            "start_line": symbol["start_line"],
-            "end_line": symbol["end_line"],
-            "text": symbol["code"],
-        }
-    )
+        all_documents.append(
+            {
+                "symbol_id": symbol_id,
+                "file": symbol["file"],
+                "symbol": symbol["qualified_name"],
+                "symbol_type": symbol["type"],
+                "language": symbol["language"],
+                "start_line": symbol["start_line"],
+                "end_line": symbol["end_line"],
+                "text": symbol["code"],
+            }
+        )
 
     if all_documents:
         texts = [
@@ -578,7 +578,7 @@ for index, symbol in enumerate(structural_symbols):
                     payload={
                         "project_id": project_id,
                         **document,
-                    },
+                    }
                 )
             )
 
@@ -586,3 +586,7 @@ for index, symbol in enumerate(structural_symbols):
             collection_name=COLLECTION_NAME,
             points=points,
         )
+
+    return db_ids
+
+# ---------------------------------------------------------
