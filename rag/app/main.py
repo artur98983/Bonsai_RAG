@@ -114,7 +114,7 @@ def index(project_id: int):
             detail="Project not found",
         )
 
-    result = index_project(
+    statistics = index_project(
         project_id,
         project["path"],
     )
@@ -122,7 +122,7 @@ def index(project_id: int):
     return {
         "status": "indexed",
         "project_id": project_id,
-        **result,
+        **statistics,
     }
 
 

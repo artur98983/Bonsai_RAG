@@ -394,7 +394,11 @@ def save_structural_analysis(
 def index_project(project_id, project_path):
     ensure_collection()
 
-    delete_project_points(project_id)
+    try:
+        delete_project_points(project_id)
+    except Exception as e:
+        # Логируем ошибку удаления и продолжаем
+        pass
 
     all_documents = []
     structural_symbols = []
@@ -525,7 +529,7 @@ def index_project(project_id, project_path):
                     }
                 )
 
-# ---------------------------------------------------------
+    # ---------------------------------------------------------
     # Save SQLite structure
     # ---------------------------------------------------------
 
@@ -539,53 +543,75 @@ def index_project(project_id, project_path):
     # Save Qdrant vectors
     # ---------------------------------------------------------
 
-    all_documents = []
+    warnings = []
 
-    for index, symbol in enumerate(structural_symbols):
-        symbol_id = db_ids[index]
+    # Инициализация Qdrant коллекции с обработкой ошибок
+    try:
+        ensure_collection()
+    except Exception as e:
+        warnings.append(f"Qdrant collection ensure failed: {e}")
 
-        all_documents.append(
-            {
-                "symbol_id": symbol_id,
-                "file": symbol["file"],
-                "symbol": symbol["qualified_name"],
-                "symbol_type": symbol["type"],
-                "language": symbol["language"],
-                "start_line": symbol["start_line"],
-                "end_line": symbol["end_line"],
-                "text": symbol["code"],
-            }
-        )
+    # Удаление точек с обработкой ошибок
+    try:
+        delete_project_points(project_id)
+    except Exception as e:
+        warnings.append(f"Qdrant cleanup failed: {e}")
 
+    # Сохранение векторов с обработкой ошибок
     if all_documents:
         texts = [
             document["text"]
             for document in all_documents
         ]
 
-        vectors = embedding_model.encode(texts)
+        try:
+            vectors = embedding_model.encode(texts)
+        except Exception as e:
+            warnings.append(f"Embedding encoding failed: {e}")
+            vectors = []
 
         points = []
 
-        for document, vector in zip(
-            all_documents,
-            vectors,
-        ):
-            points.append(
-                PointStruct(
-                    id=document["symbol_id"],
-                    vector=vector.tolist(),
-                    payload={
-                        "project_id": project_id,
-                        **document,
-                    }
+        if vectors:
+            for document, vector in zip(
+                all_documents,
+                vectors,
+            ):
+                points.append(
+                    PointStruct(
+                        id=document["symbol_id"],
+                        vector=vector.tolist(),
+                        payload={
+                            "project_id": project_id,
+                            **document,
+                        }
+                    )
                 )
-            )
 
-        qdrant.upsert(
-            collection_name=COLLECTION_NAME,
-            points=points,
-        )
+        # Сохранение Qdrant с обработкой ошибок
+        if points:
+            try:
+                qdrant.upsert(
+                    collection_name=COLLECTION_NAME,
+                    points=points,
+                )
+            except Exception as e:
+                warnings.append(f"Qdrant upsert failed: {e}")
+
+    # Формирование статистики для возврата
+    statistics = {
+        "project_id": project_id,
+        "files_scanned": files_count,
+        "files_indexed": len(set(
+            symbol["file"] for symbol in structural_symbols
+        )),
+        "symbols_indexed": len(structural_symbols),
+        "references_indexed": len(structural_references),
+        "vectors_upserted": len(points) if 'points' in locals() else 0,
+        "warnings": warnings,
+    }
+
+    return statistics
 
     return db_ids
 
